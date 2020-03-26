@@ -1,39 +1,31 @@
-use std::env;
-use std::io::{self, ErrorKind, Read, Result, Write};
-
-const CHUNK_SIZE: usize = 16 * 1024;
+use relay::{args::Args, read, stats, write};
+use std::io::Result;
+use std::sync::{Arc, Mutex}; 
+use std::thread; 
 
 fn main() -> Result<()> {
-    let silent = !env::var("PV_SILENT").unwrap_or_default().is_empty();
-    let mut total_bytes = 0;
+    let args = Args::parse();
+    let Args {
+        input_file, 
+        output_file, 
+        silent, 
+    } = args;
+    
+    let quit = Arc::new(Mutex::new(false));
+    let (quit1, quit2, quit3) = (quit.clone(), quit.clone(), quit.clone()); 
 
-    loop {
-        let mut buffer = [0; CHUNK_SIZE];
-        let num_read = match io::stdin().read(&mut buffer) {
-            Ok(0) => break,
-            Ok(x) => x,
-            Err(_) => break,
-        };
+    let read_handle = thread::spawn(move || read::read_loop(&input_file, quit1));
+    let stats_handle = thread::spawn(move || stats::stats_loop(silent, quit2));
+    let write_handle = thread::spawn(move || write::write_loop(&output_file, quit3));
 
-        if !silent {
-            eprint!("\r{}", total_bytes);
-        }
-        total_bytes += num_read;
+   
+    let read_io_result = read_handle.join().unwrap(); 
+    let stats_io_result = stats_handle.join().unwrap(); 
+    let write_io_result = write_handle.join().unwrap();
 
-        if let Err(e) = io::stdout().write(&buffer[..num_read]) {
-            if e.kind() == ErrorKind::BrokenPipe {
-                break;
-            }
-
-            return Err(e);
-        }
-
-        io::stdout().write_all(&buffer[..num_read]).unwrap();
-    }
-
-    if !silent {
-        eprint!("\r{}", total_bytes);
-    }
+    read_io_result?;
+    stats_io_result?;
+    write_io_result?;
 
     Ok(())
 }
