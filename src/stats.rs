@@ -1,24 +1,25 @@
-use std::io::Result; 
-use std::sync::{Arc, Mutex};
+use crossbeam::channel::Receiver;
+use std::io::Result;
 
-pub fn stats_loop(silent: bool, quit: Arc<Mutex<bool>>) -> Result<()> {
+pub fn stats_loop(silent: bool, stats_rx: Receiver<usize>) -> Result<()> {
     let mut total_bytes = 0;
 
     loop {
-        // todo::receive the vector of bytes
-        let buffer: Vec<u8> = Vec::new(); 
-        total_bytes += buffer.len();
+        let num_bytes = stats_rx.recv().unwrap();
+        total_bytes += num_bytes;
+
         if !silent {
             eprint!("\r{}", total_bytes);
         }
 
-        // todo: send vector to write loop 
-        let quit = quit.lock().unwrap(); 
-        if *quit {
+        // break out if we don't receive anything
+        if num_bytes == 0 {
             break;
         }
     }
 
-    eprintln!();
+    if !silent {
+        eprintln!();
+    }
     Ok(())
 }
